@@ -1,13 +1,26 @@
 #! usr/bin/env python
 
 '''
-    Output file:
+    Instruction:
+    - 1. Clean data by function 'clean_data(f1, f2)', it takes a long time to clean data, this has been done,
+    and new_data.csv is the output file.
+    - 2. For each input, first check if it is valid, for a valid input, it should be targeted as a model, then
+    return a make-model pair.
+    - 3. Find top 20 related cars by seaching count number in  new_data.csv, and pring out.
+
+    Data clean output file:
+        - new_data.csv
+
+    Final related car file:
         - output.json
+
 '''
 
 import csv
 import json
 import re
+import pandas
+import time
 
 try:
     from sets import Set
@@ -17,7 +30,7 @@ except ImportError:
 model_list = []
 make_list = []
 
-# Read file when start running.
+# load file when start running.
 with open('models.csv', 'rU') as model_file:
     model_csv = csv.reader(model_file)
     for i in model_csv:
@@ -30,8 +43,8 @@ with open('makes.csv', 'rU') as makes_file:
 
 
 def read_csv(filename):
-    """ Read csv file, convert result
-        to a dictionary and return.
+    """ Read csv file by column, convert result
+        to a dictionary: first(of each column): others in the column.
     """
     info = []
     result = {}
@@ -51,17 +64,15 @@ def read_csv(filename):
 
 
 def read_to_dict(filename):
-    """ Read csv file, return a dict(id: make)
+    """ Read csv file by row, return a (id: make) pair.
     """
     id_make = {}
     with open(filename, 'rU') as csvfile:
-        # Read csv file by Row.
         content = csv.reader(csvfile, delimiter=',', quotechar='"')
         # Reading from content into a list.
         for row in content:
             if row[0] != 'MakeID':
                 id_make[row[0]] = row[1].lower()
-                # Save result into a dictionary as: id : make
     # print id_make
     return id_make
 
@@ -70,16 +81,14 @@ def write_to_file(info, file_name):
     """ Save info into file, if has some dict,
         combine all together.
     """
-    new = {}
     try:
         with open(file_name, 'rb') as fr:
             old = json.load(fr)
             new = dict(old.items() + info.items())
-    except Exception as e:
+    except Exception:
         new = info
     try:
         with open(file_name, 'w') as f:
-            # Save the dict into file.
             json.dump(new, f)
     except Exception as e:
         print str(e)
@@ -90,9 +99,10 @@ def search_csv(filename, str):
     """
     result = []
     temp = []
-    with open(filename, 'rU') as f:
-        content = csv.reader(f)
-        for row in content:
+    df = pandas.read_csv(filename, dtype='str')
+    data = df.values
+    if True:
+        for row in data:
             for field in row:
                 if field.lower() == str:
                     for item in row:
@@ -101,11 +111,10 @@ def search_csv(filename, str):
                     result.append(temp)
                     temp = []
     # return a list of list
-    # if not found, return []
     return result
 
 
-def findWholeWord(w):
+def find_whole_word(w):
     """ Helper function to seek a whole word, rather than substring.
     """
     return re.compile(r'\b({0})\b'.format(w), flags=re.IGNORECASE).search
@@ -127,7 +136,7 @@ def interp(str):
     # Find any models exists in raw input to temp list.
     temp = []
     for model in models:
-        if findWholeWord(model)(str.lower()):
+        if find_whole_word(model)(str.lower()):
             temp.append(model)
     # if no model found, return invalid input.
     if len(temp) == 0:
@@ -152,7 +161,7 @@ def interp(str):
         return 0
 
 
-def find_related(str):
+def find_related(filename, str):
     """
         Take any str as input, check if input can be a valid make-model pair,
         Then find related make-model pair by searching datas.csv.
@@ -162,7 +171,7 @@ def find_related(str):
     if not keyword:
         raise Exception("Invalid input, please input at least a model.")
 
-    rows = search_csv('data.csv', keyword)
+    rows = search_csv(filename, keyword)
     print '\n Searching for related models...\n'
     # rows is sorted by the csv file structure.
 
@@ -171,10 +180,10 @@ def find_related(str):
     for row in rows:
         temp_list = []
         for i in row:
-            if not i in keyword \
+            if i not in keyword \
                     and not i.isdigit() \
-                    and not keyword in i:
-                print "Check if %s is related." % i
+                    and keyword not in i:
+                print "Check if %s is related to input..." % i
                 pair = interp(i)
                 if pair:
                     if pair in related_set:
@@ -204,12 +213,61 @@ def find_related(str):
     print json.dumps(output, indent=4)
 
 
-if __name__ == "__main__":
-    # Get a list of all models and makes.
-    models, makes = get_models_makes('models.csv', 'makes.csv')
+def clean_data(input_file, output_file):
+    """ Clean raw data in input_file and save into output_file.
+    """
+    time_start = time.time()
+    # helper dict with: <pairs: count>
+    count_dict = {}
 
-    # Test cases
-    print 'make-model pair tests: '
+    df = pandas.read_csv(input_file)
+    data = df.values
+    if len(data):
+        # Start from 1, if 'kw1', 'kw2', 'count' jumpt to next line.
+        for row in data[1:]:
+            new_row = []
+            for i in row[0:2]:
+                j = interp(i)
+                # Good make-model pair
+                if j != 0:
+                    new_row.append(j)
+                else:
+                    continue
+            # Ordered two make-model pairs.
+            if len(new_row) > 1:
+                # print "new_row", new_row
+                temp = sorted(new_row)
+                # include count number.
+                temp.append(row[2])
+                # Save this as key: key, count as value for easy look-up.
+                if temp[0] != temp[1]:
+                    pair = temp[0] + '_' + temp[1]
+                    if count_dict.has_key(pair):
+                        count_dict[pair] = int(count_dict[pair]) + int(temp[2])
+                    else:
+                        count_dict[pair] = int(temp[2])
+    # Sort the key-value pair by value, from big to small.
+    new_cnt = sorted(count_dict.items(), key=lambda x: x[1], reverse=True)
+
+    # Write new content into file.
+    with open(output_file, 'w') as fw:
+        csv_writer = csv.writer(fw)
+        for item in new_cnt:
+            row = item[0].split('_') + [item[1]]
+            csv_writer.writerow(row)
+    ti = time.time() - time_start
+    print "Data cleaning finished, used %s seconds. New file: '/%s'." % (round(ti, 2), output_file)
+
+
+if __name__ == "__main__":
+    models, makes = get_models_makes('models.csv', 'makes.csv')
+    '''
+    # clean_data('data.csv', 'new_data.csv')
+    # For testing, it took 31s to run.
+    clean_data('data_300.csv', 'new_data_300.csv')
+    '''
+    # Get a list of all models and makes.
+    print 'Input tests:\n'
 
     test = interp('used honda accord')
     print "Result is: %s  \n" % test
@@ -245,9 +303,11 @@ if __name__ == "__main__":
     test9 = interp('acura tl')
     print "Result is: %s \n" % test9
 
-    find_related('2012 acura ilx')
+    print "Find realted cars:\n"
 
-    find_related('mitsubishi outlander')
+    find_related('new_data.csv', '2012 acura ilx')
+
+    find_related('new_data.csv', 'mitsubishi outlander')
 
     print "---------- Read from file: ---------"
     with open('output.json', 'rb') as f:
