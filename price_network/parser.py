@@ -1,7 +1,6 @@
 #! usr/bin/env python
 
 '''
-
     Output file:
         - output.json
 '''
